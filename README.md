@@ -10,6 +10,11 @@ processes.
 
 ![Ringmaster in action](in_action.png)
 
+To the left, on the image above, are the Circus watchers. In the center, a
+green string indicates the number of processes of the watcher, the current use
+of CPU, and memory. To the right, command buttons – **incr**/**decr** for
+normal watchers; and **start**/**stop** for singleton watchers.
+
 ## Requirements
 
 * Python 3.4 (**asyncio**).
@@ -19,15 +24,19 @@ processes.
 
 ## Installation
 
+Use the **pip** package manager from Python 3.4 or greater.
+
     pip install ringmaster
 
 ## Basic Use
+
+Just type **ringmaster**. There is no command line option.
 
     ringmaster
 
 ## Troubleshooting
 
-### MacPorts
+### MacPorts on OS X
 
 The Python 3.4 MacPorts distribution present a series of dificulties to run
 Ringmaster on a OS X computer.
@@ -38,7 +47,7 @@ separate pacakge.
 Second, it will install the Ringmaster executable script in a nonstandard
 location.
 
-To avoid these issues, use the following installation steps.
+To prevent issues, use the following installation steps.
 
     sudo port selfupdate
     sudo port install py34-tkinter py34-pip
