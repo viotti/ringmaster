@@ -17,22 +17,34 @@ normal watchers; and **start**/**stop** for singleton watchers.
 
 ## Requirements
 
-* Python 3.4 (**asyncio**).
-* [aiozmq](https://github.com/aio-libs/aiozmq).
-* Circus itself is not a code dependency, but without it this program does not
-  have much use.
+Ringmaster is built on top of Python 3.4 (**asyncio**) and
+[aiozmq](https://github.com/aio-libs/aiozmq).
+
+Circus itself is not a code dependency, but without it this program does not
+have much use.
 
 ## Installation
 
-Use the **pip** package manager from Python 3.4 or greater.
+Via **pip**.
 
     pip install ringmaster
+
+Via **distutils**.
+
+    curl -L https://github.com/viotti/ringmaster/archive/0.3.0.tar.gz > ringmaster-0.3.0.tar.gz
+    tar xzf ringmaster-0.3.0.tar.gz
+    cd ringmaster-0.3.0
+    python setup.py sdist
+    pip install dist/ringmaster-*.tar.gz
 
 ## Basic Use
 
 Just type **ringmaster**. There is no command line option.
 
     ringmaster
+
+The program will establish communication with the Circus daemon and display
+the watchers on its GUI.
 
 ## Troubleshooting
 
@@ -45,7 +57,7 @@ First, it does not come with the **tkinter** library, which is provided as a
 separate pacakge.
 
 Second, it will install the Ringmaster executable script in a nonstandard
-location.
+location (`/opt/local/Library/Frameworks/Python.framework/Versions/3.4/bin`).
 
 To prevent issues, use the following installation steps.
 

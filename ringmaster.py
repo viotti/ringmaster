@@ -304,8 +304,17 @@ class _Application(Tk):
             _, lbl = self._grid[watcher]['widgets'][:2]
             string = '{}: {cpu:.1%} cpu, {mem:.1%} mem'
 
-            stats['cpu'] /= 100.0
-            stats['mem'] /= 100.0
+            if stats['cpu'] == 'N/A':
+                stats['cpu'] = 0
+
+            else:
+                stats['cpu'] /= 100.0
+
+            if stats['mem'] == 'N/A':
+                stats['mem'] = 0
+
+            else:
+                stats['mem'] /= 100.0
 
             # https://docs.python.org/3/library/string.html#format-examples.
             lbl.configure(text=string.format(len(stats['pid']), **stats))
