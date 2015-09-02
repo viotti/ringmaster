@@ -77,4 +77,4 @@ of the environment.
 ## TODO
 
 * Implement command line options for the connection endpoints.
-* Support sending signals to processes.
+* Improve the watcher details dialog.

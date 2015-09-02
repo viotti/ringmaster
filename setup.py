@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='ringmaster',
-    version='0.3.0',
+    version='0.4.0',
     description='Circus Tcl/Tk Control Panel',
     author='Rafael Viotti',
     author_email='rviotti@gmail.com',
