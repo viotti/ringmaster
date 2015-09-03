@@ -116,7 +116,7 @@ class _Dialog(Toplevel):
 
     def _paint(self):
         master = ttk.Frame(self, padding=(10, 10, 10, 10))
-        title = ttk.Label(master, text=_DOT(self._watcher), font='-size 16')
+        title = ttk.Label(master, text='+ ' + _DOT(self._watcher))
         frame = ttk.Frame(master)
         close = ttk.Button(master, text='Close', command=self._close)
         stats = self._parent._grid[self._watcher]
@@ -129,6 +129,7 @@ class _Dialog(Toplevel):
         frame.grid(row=1, column=0, sticky='EW')
         close.grid(row=2, column=0, sticky='EW', pady=(10, 0))
 
+        title.configure(font='-size 16')
         frame.columnconfigure(0, weight=1)
 
         while self._parent._running:
