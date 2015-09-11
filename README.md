@@ -25,15 +25,15 @@ have much use.
 
 ## Installation
 
-Via **pip**.
+Latest release.
 
     pip install ringmaster
 
-Via **distutils**.
+Latest commit on the master branch of the project's Git repository.
 
-    curl -L https://github.com/viotti/ringmaster/archive/0.3.0.tar.gz > ringmaster-0.3.0.tar.gz
-    tar xzf ringmaster-0.3.0.tar.gz
-    cd ringmaster-0.3.0
+    mkdir ringmaster
+    cd ringmaster
+    curl -L https://github.com/viotti/ringmaster/tarball/master | tar -xz --strip-components 1 -
     python setup.py sdist
     pip install dist/ringmaster-*.tar.gz
 

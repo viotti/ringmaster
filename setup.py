@@ -8,7 +8,7 @@ setup(
     author_email='rviotti@gmail.com',
     install_requires=['aiozmq'],
     url='https://github.com/viotti/ringmaster',
-    download_url = 'https://github.com/viotti/ringmaster/tarball/0.2.0',
+    download_url = 'https://github.com/viotti/ringmaster/tarball/0.4.0',
     py_modules=['ringmaster'],
     entry_points = {'console_scripts': ['ringmaster = ringmaster:main']}
 )

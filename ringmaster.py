@@ -223,7 +223,7 @@ class _Application(Tk):
         # GUI.
         self._font = font.Font(family='Helvetica', size=12)  # See [A1].
         self._master = ttk.Frame(self, padding=(10, 10, 10, 10))
-        self._title = ttk.Label(self._master, text=_TITLE, font='-size 16')
+        self._title = ttk.Label(self._master, text='Watchers', font='-size 16')
         self._frame = ttk.Frame(self._master)
         self._button = ttk.Button(self._master, text='Quit')
 
