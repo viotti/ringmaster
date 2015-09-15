@@ -297,7 +297,10 @@ class _Application(Tk):
 
         reply = yield from self._rep1
 
-        if query['id'] == reply['id'] and reply['status'] == 'ok':
+        if query['id'] == reply['id'] and action == 'status':
+            return reply['status']
+
+        elif query['id'] == reply['id'] and reply['status'] == 'ok':
             return reply
 
         elif query['id'] == reply['id']:
@@ -372,6 +375,8 @@ class _Application(Tk):
                 stats = yield from self._do_request('stats', name)
                 model = self._grid.get(name, {})
 
+                stats['status'] = yield from self._do_request('status', name)
+
                 stats.setdefault('info', {})
 
                 if name not in forget and not model:
@@ -424,6 +429,8 @@ class _Application(Tk):
 
                 if name not in forget:
                     model['pids'] = [int(x) for x in stats['info'].keys()]
+
+                    model['status'] = stats['status']
 
                     self._update_watcher_state_a(name)
 
@@ -534,7 +541,14 @@ class _Application(Tk):
         self._toplevel = _Dialog(self, name)
 
     def _incr_process(self, watcher, event):
-        def ok(reply):
+        def ok1(reply):
+            self._grid[watcher]['pids'].append(0)  # TODO: request pids here.
+
+            self._update_watcher_state_a(watcher)
+
+            self._grid[watcher]['status'] = 'active'
+
+        def ok2(reply):
             self._grid[watcher]['pids'].append(0)  # TODO: request pids here.
 
             self._update_watcher_state_a(watcher)
@@ -548,7 +562,11 @@ class _Application(Tk):
 
         self._grid[watcher]['widgets'][2].unbind('<Button-1>')
 
-        async(self._on_reply('incr', watcher, ok, error))
+        if self._grid[watcher]['status'] == 'stopped':
+            async(self._on_reply('start', watcher, ok1, error))
+
+        else:
+            async(self._on_reply('incr', watcher, ok2, error))
 
     def _decr_process(self, watcher, event):
         def ok(reply):
