@@ -14,6 +14,19 @@
 #
 # See "http://stackoverflow.com/a/8775078".
 #
+# NOTES
+#
+#   [LEAK] This program has a memory leak in OS X. Memory consumption increases
+#   over time, and is proportional to the frequency of invocation of methods
+#   "_update_watcher_state_a" and "_update_watcher_state_b" of the application
+#   class, which only perform Tkinter operations. This leads me to believe that
+#   the problem is either in Tcl/Tk, or Tkinter itself.
+#
+#     http://stackoverflow.com/questions/22143622
+#
+#   [LEAK2] Test if a watcher's process list has changed before calling the
+#   "_update_watcher_state_a" method. This will mitigate memory leakage.
+#
 
 # Python.
 from os import kill
@@ -42,21 +55,6 @@ _SIGNALS = ['HUP', 'INT', 'QUIT', 'KILL', 'TERM', 'USR1', 'USR2']
 # Helper to format watcher names.
 _DOT = lambda x: x.replace('-', '.')
 
-# Taken from "http://www.reddit.com/r/Python/comments/33ecpl".
-@coroutine
-def _mainloop(root, interval=0.05):
-    '''Run a tkinter app in an asyncio event loop.'''
-
-    try:
-        while root._running:
-            root.update()
-
-            yield from sleep(interval)
-
-    except TclError as e:
-        if 'application has been destroyed' not in e.args[0]:
-            raise
-
 class _CircusSubProtocol(ZmqProtocol):
     def __init__(self, application):
         self._app = application
@@ -79,7 +77,7 @@ class _CircusDealerProtocol(ZmqProtocol):
         getattr(self._app, self._rep).set_result(loads(message[0].decode()))
 
 class _Dialog(Toplevel):
-    'Watcher details dialog.'
+    '''Watcher details dialog.'''
 
     def __init__(self, parent, watcher):
         super().__init__(parent)
@@ -115,32 +113,32 @@ class _Dialog(Toplevel):
         self.focus_set()
 
     def _paint(self):
-        master = ttk.Frame(self, padding=(10, 10, 10, 10))
-        title = ttk.Label(master, text='+ ' + _DOT(self._watcher))
-        frame = ttk.Frame(master)
-        close = ttk.Button(master, text='Close', command=self._close)
-        stats = self._parent._grid[self._watcher]
+        procs = self._parent._frame.children[self._watcher + '+l']._w_procs
+        outer = ttk.Frame(self, padding=(10, 10, 10, 10))
+        title = ttk.Label(outer, text='+ ' + _DOT(self._watcher))
+        close = ttk.Button(outer, text='Close', command=self._close)
+        frame = ttk.Frame(outer)
         drawn = []
 
         self.title('')
 
-        master.grid(row=0, column=0, sticky='NSEW')
+        outer.grid(row=0, column=0, sticky='NSEW')
         title.grid(row=0, column=0, pady=(0, 10))
         frame.grid(row=1, column=0, sticky='EW')
         close.grid(row=2, column=0, sticky='EW', pady=(10, 0))
 
-        title.configure(font='-size 16')
+        title.config(font='-size 16')
         frame.columnconfigure(0, weight=1)
 
         while self._parent._running:
             for x in frame.grid_slaves():
-                if x._pid not in stats['pids']:
-                    x.configure(state='disabled')
+                if x._pid not in procs:
+                    x.config(state='disabled')
 
                     if x.grid_info()['row'] > 0:
                         x.unbind('<Button-1>')
 
-            for j, pid in enumerate(stats['pids'], len(drawn)):
+            for j, pid in enumerate(procs, len(drawn)):
                 if pid not in drawn:
                     lbl = ttk.Label(frame, text=pid, style='X.TLabel')
 
@@ -209,23 +207,23 @@ class _Dialog(Toplevel):
 #    http://www.tkdocs.com/tutorial/styles.html
 #
 class _Application(Tk):
-    'Ringmaster main application window.'
+    '''Ringmaster main application window.'''
 
     def __init__(self, parent=None):
         super().__init__(parent)
 
         # Internal.
         self._sub = self._req1 = self._rep1 = self._req2 = self._rep2 = None
-        self._grid = {}
         self._running = True
         self._toplevel = None
 
         # GUI.
         self._font = font.Font(family='Helvetica', size=12)  # See [A1].
-        self._master = ttk.Frame(self, padding=(10, 10, 10, 10))
+        self._master = ttk.Frame(self, name='master', padding=(10, 10, 10, 10))
         self._title = ttk.Label(self._master, text='Watchers', font='-size 16')
-        self._frame = ttk.Frame(self._master)
+        self._frame = ttk.Frame(self._master, name='frame')
         self._button = ttk.Button(self._master, text='Quit')
+        self._grid = self._frame.children
 
         self.createcommand('::tk::mac::Quit', self._quit)  # See [A2].
         self.resizable(False, False)
@@ -265,7 +263,98 @@ class _Application(Tk):
         self._req2.setsockopt(IDENTITY, uuid4().hex.encode())
         self._req2.connect(_CIRCUS_CONTROL_ADDR)
 
-        async(self._paint())
+    @coroutine
+    def paint(self):
+        set1 = set((yield from self._do_request('list')).get('watchers', []))
+        set2 = set()
+        set3 = set()
+
+        ttk.Style().map('TLabel', foreground=[('disabled', 'gray')])  # [A3].
+        ttk.Style().map('TButton', foreground=[('disabled', 'gray')])
+
+        # Pass one, classify watchers: all, singletons and forgotten.
+        for watcher in set1:
+            conf = yield from self._do_request('options', watcher)
+
+            if conf['options']['singleton']:
+                set2.add(watcher)
+
+            if 'forget' in conf['options']:
+                set3.update(conf['options']['forget'].split())
+
+        # Pass two, assemble the watcher grid.
+        for i, name in enumerate(sorted(set1 - set3)):
+            lb1 = ttk.Label(self._frame, name=name + '+l', text=_DOT(name))
+            lb2 = ttk.Label(self._frame, name=name + '+c1', text='–')
+
+            lb1.grid(row=i, column=0, sticky='EW')
+            lb2.grid(row=i, column=1)
+
+            lb2.config(anchor='center', width=25, foreground='grey')
+
+            if name in set2:
+                bt1 = ttk.Button(self._frame, name=name + '+c2', text='Start')
+                bt2 = ttk.Button(self._frame, name=name + '+r', text=' +')
+
+                bt1.grid(row=i, column=2, columnspan=2, sticky='EW')
+                bt2.grid(row=i, column=4)
+
+                bt1.bind('<Button-1>', partial(self._start_watcher, name))
+                bt2.config(state='disabled', width=3)
+
+            else:
+                bt1 = ttk.Button(self._frame, name=name + '+c2', text='Incr')
+                bt2 = ttk.Button(self._frame, name=name + '+c3', text='Decr')
+                bt3 = ttk.Button(self._frame, name=name + '+r', text=' +')
+
+                bt1.grid(row=i, column=2)
+                bt2.grid(row=i, column=3)
+                bt3.grid(row=i, column=4)
+
+                bt1.bind('<Button-1>', partial(self._incr_process, name))
+                bt2.config(state='disabled')
+                bt3.config(state='disabled', width=3)
+
+            # Put metadata in label one.
+            lb1._w_procs = []
+            lb1._w_state = 'stopped'
+            lb1._w_singleton = name in set2
+
+        # Pass three, continuously update watcher state.
+        while self._running:
+            for name in set1 - set3:
+                state = yield from self._do_request('status', name)
+                stats = yield from self._do_request('stats', name)
+                procs = list(stats.get('info', {}).keys())
+                label = self._grid[name + '+l']
+
+                label._w_state = state
+
+                if sorted(label._w_procs) != sorted(procs):  # See [LEAK2].
+                    label._w_procs = procs
+
+                    self._update_watcher_state_a(name)
+
+            yield from sleep(0.5)
+
+    # Taken from "http://www.reddit.com/r/Python/comments/33ecpl".
+    #
+    # For a threaded approach, see the ActiveState recipe mentioned by Guido
+    # van Rossum at the "Tkinter-discuss" list ("http://goo.gl/VJI1oJ").
+    #
+    @coroutine
+    def mainloop(self, interval=0.05):
+        '''Run a tkinter app in an asyncio event loop.'''
+
+        try:
+            while self._running:
+                self.update()
+
+                yield from sleep(interval)
+
+        except TclError as e:
+            if 'application has been destroyed' not in e.args[0]:
+                raise
 
     # This method:
     #
@@ -359,131 +448,62 @@ class _Application(Tk):
 
         self._req2.write([dumps(query).encode()])
 
-    @coroutine
-    def _paint(self):
-        forget, row, style = set(), 0, ttk.Style()
+    def _update_watcher_state_a(self, name):  # See [LEAK].
+        lb1 = self._grid[name + '+l']
+        lb2 = self._grid[name + '+c1']
 
-        style.map('TLabel', foreground=[('disabled', 'gray')])  # See [A3].
-        style.map('TButton', foreground=[('disabled', 'gray')])
+        if lb1._w_singleton:
+            bt1 = self._grid[name + '+c2']
+            bt2 = self._grid[name + '+r']
 
-        while self._running:
-            reply = yield from self._do_request('list')
+            if lb1._w_procs:
+                lb2.config(foreground='darkgreen')
+                bt1.config(text='Stop')
+                bt2.config(state='normal')
 
-            reply.setdefault('watchers', [])
-
-            for name in sorted(reply['watchers']):
-                stats = yield from self._do_request('stats', name)
-                model = self._grid.get(name, {})
-
-                stats['status'] = yield from self._do_request('status', name)
-
-                stats.setdefault('info', {})
-
-                if name not in forget and not model:
-                    cfg = yield from self._do_request('options', name)
-                    lb1 = ttk.Label(self._frame, text=_DOT(name))
-                    lb2 = ttk.Label(self._frame, width=25, anchor='center')
-                    btw = ttk.Button(self._frame, text=' +', width=3)
-
-                    self._grid[name] = model
-
-                    model['widgets'] = []
-                    model['config'] = cfg['options']
-
-                    lb1.grid(row=row, column=0, sticky='EW')
-                    lb2.grid(row=row, column=1)
-
-                    model['widgets'].append(lb1)
-                    model['widgets'].append(lb2)
-
-                    if cfg['options']['singleton']:
-                        btx = ttk.Button(self._frame)
-
-                        btx.grid(row=row, column=2, columnspan=2, sticky='EW')
-
-                        model['widgets'].append(btx)
-
-                    else:
-                        bty = ttk.Button(self._frame, text='Incr')
-                        btz = ttk.Button(self._frame, text='Decr')
-
-                        bty.grid(row=row, column=2)
-                        btz.grid(row=row, column=3)
-
-                        model['widgets'].append(bty)
-                        model['widgets'].append(btz)
-
-                    btw.grid(row=row, column=4)
-
-                    model['widgets'].append(btw)
-
-                    if 'forget' in cfg['options']:
-                        forget.update(cfg['options']['forget'].split())
-
-                    for x in forget:
-                        if x in self._grid:
-                            for y in self._grid[x]['widgets']:
-                                y.grid_forget()
-
-                    row += 1
-
-                if name not in forget:
-                    model['pids'] = [int(x) for x in stats['info'].keys()]
-
-                    model['status'] = stats['status']
-
-                    self._update_watcher_state_a(name)
-
-            yield from sleep(0.5)
-
-    def _update_watcher_state_a(self, name):
-        if self._grid[name]['config']['singleton']:
-            _, lbl, btx, btw = self._grid[name]['widgets']
-
-            if self._grid[name]['pids']:
-                lbl.configure(foreground='green')
-                btx.configure(text='Stop')
-                btw.configure(state='normal')
-
-                btx.bind('<Button-1>', partial(self._stop_watcher, name))
-                btw.bind('<Button-1>', partial(self._more_watcher, name))
+                bt1.bind('<Button-1>', partial(self._stop_watcher, name))
+                bt2.bind('<Button-1>', partial(self._more_watcher, name))
 
             else:
-                lbl.configure(foreground='grey', text='–')
-                btx.configure(text='Start')
-                btw.configure(state='disabled')
+                lb2.config(foreground='grey', text='–')
+                bt1.config(text='Start')
+                bt2.config(state='disabled')
 
-                btx.bind('<Button-1>', partial(self._start_watcher, name))
-                btw.unbind('<Button-1>')
+                bt1.bind('<Button-1>', partial(self._start_watcher, name))
+                bt2.unbind('<Button-1>')
 
         else:
-            _, lbl, bty, btz, btw = self._grid[name]['widgets']
+            bt1 = self._grid[name + '+c2']
+            bt2 = self._grid[name + '+c3']
+            bt3 = self._grid[name + '+r']
 
-            if self._grid[name]['pids']:
-                lbl.configure(foreground='green')
-                btz.configure(state='normal')
-                btw.configure(state='normal')
+            if lb1._w_procs:
+                lb2.config(foreground='darkgreen')
+                bt2.config(state='normal')
+                bt3.config(state='normal')
 
-                bty.bind('<Button-1>', partial(self._incr_process, name))
-                btz.bind('<Button-1>', partial(self._decr_process, name))
-                btw.bind('<Button-1>', partial(self._more_watcher, name))
+                bt1.bind('<Button-1>', partial(self._incr_process, name))
+                bt2.bind('<Button-1>', partial(self._decr_process, name))
+                bt3.bind('<Button-1>', partial(self._more_watcher, name))
 
             else:
-                lbl.configure(foreground='grey', text='–')
-                btz.configure(state='disabled')
-                btw.configure(state='disabled')
+                lb2.config(foreground='grey', text='–')
+                bt2.config(state='disabled')
+                bt3.config(state='disabled')
 
-                bty.bind('<Button-1>', partial(self._incr_process, name))
-                btz.unbind('<Button-1>')
-                btw.unbind('<Button-1>')
+                bt1.bind('<Button-1>', partial(self._incr_process, name))
+                bt2.unbind('<Button-1>')
+                bt3.unbind('<Button-1>')
 
-    def _update_watcher_state_b(self, watcher, stats):
-        if watcher in self._grid and 'pid' in stats:
-            self._grid[watcher]['pids'] = [int(x) for x in stats['pid']]
+    def _update_watcher_state_b(self, watcher, stats):  # See [LEAK].
+        if watcher + '+l' in self._grid and 'pid' in stats:
+            lb1 = self._grid[watcher + '+l']
+
+            lb1._w_procs = [int(x) for x in stats['pid']]
 
             if stats['pid']:
-                _, lbl = self._grid[watcher]['widgets'][:2]
-                string = '{}: {cpu:.1%} cpu, {mem:.1%} mem'
+                lb2 = self._frame.children[watcher + '+c1']
+                tpl = '{}: {cpu:.1%} cpu, {mem:.1%} mem'
 
                 if stats['cpu'] == 'N/A':
                     stats['cpu'] = 0
@@ -498,42 +518,44 @@ class _Application(Tk):
                     stats['mem'] /= 100.0
 
                 # http://docs.python.org/3/library/string.html#format-examples.
-                lbl.configure(text=string.format(len(stats['pid']), **stats))
+                lb2.config(text=tpl.format(len(stats['pid']), **stats))
 
             if self._toplevel:
                 self._toplevel._painter.send(None)
 
     def _start_watcher(self, name, event):
         def ok(reply):
-            self._grid[name]['pids'].append(0)  # TODO: request pids here.
+            lbl._w_procs.append(0)  # Request actual PIDs here (FIXME).
 
             self._update_watcher_state_a(name)
 
         def error(message):
-            fun = partial(self._start_watcher, name)
+            btn.bind('<Button-1>', partial(self._start_watcher, name))
 
             messagebox.showerror('Error', message + '.')
 
-            self._grid[name]['widgets'][1].bind('<Button-1>', fun)
+        lbl = self._grid[name + '+l']
+        btn = self._grid[name + '+c2']
 
-        self._grid[name]['widgets'][1].unbind('<Button-1>')
+        btn.unbind('<Button-1>')
 
         async(self._on_reply('start', name, ok, error))
 
     def _stop_watcher(self, name, event):
         def ok(reply):
-            self._grid[name]['pids'].pop()  # TODO: request pids here.
+            lbl._w_procs.pop()  # Request actual PIDs here (FIXME).
 
             self._update_watcher_state_a(name)
 
         def error(message):
-            fun = partial(self._start_watcher, name)
+            btn.bind('<Button-1>', partial(self._start_watcher, name))
 
             messagebox.showerror('Error', message + '.')
 
-            self._grid[name]['widgets'][1].bind('<Button-1>', fun)
+        lbl = self._frame.children[name + '+l']
+        btn = self._frame.children[name + '+c2']
 
-        self._grid[name]['widgets'][1].unbind('<Button-1>')
+        btn.unbind('<Button-1>')
 
         async(self._on_reply('stop', name, ok, error))
 
@@ -542,27 +564,27 @@ class _Application(Tk):
 
     def _incr_process(self, watcher, event):
         def ok1(reply):
-            self._grid[watcher]['pids'].append(0)  # TODO: request pids here.
+            lbl._w_procs.append(0)  # Request actual PIDs here (FIXME).
+            lbl._w_state = 'active'
 
             self._update_watcher_state_a(watcher)
 
-            self._grid[watcher]['status'] = 'active'
-
         def ok2(reply):
-            self._grid[watcher]['pids'].append(0)  # TODO: request pids here.
+            lbl._w_procs.append(0)  # Request actual PIDs here (FIXME).
 
             self._update_watcher_state_a(watcher)
 
         def error(message):
-            fun = partial(self._incr_process, watcher)
+            btn.bind('<Button-1>', partial(self._incr_process, watcher))
 
             messagebox.showerror('Error', message + '.')
 
-            self._grid[watcher]['widgets'][2].bind('<Button-1>', fun)
+        lbl = self._grid[watcher + '+l']
+        btn = self._grid[watcher + '+c2']
 
-        self._grid[watcher]['widgets'][2].unbind('<Button-1>')
+        btn.unbind('<Button-1>')
 
-        if self._grid[watcher]['status'] == 'stopped':
+        if lbl._w_state == 'stopped':
             async(self._on_reply('start', watcher, ok1, error))
 
         else:
@@ -570,18 +592,19 @@ class _Application(Tk):
 
     def _decr_process(self, watcher, event):
         def ok(reply):
-            self._grid[watcher]['pids'].pop()  # TODO: request pids here.
+            lbl._w_procs.pop()  # Request actual PIDs here (FIXME).
 
             self._update_watcher_state_a(watcher)
 
         def error(message):
-            fun = partial(self._decr_process, watcher)
+            btn.bind('<Button-1>', partial(self._decr_process, watcher))
 
             messagebox.showerror('Error', message + '.')
 
-            self._grid[watcher]['widgets'][2].bind('<Button-1>', fun)
+        lbl = self._grid[watcher + '+l']
+        btn = self._grid[watcher + '+c3']
 
-        self._grid[watcher]['widgets'][2].unbind('<Button-1>')
+        btn.unbind('<Button-1>')
 
         async(self._on_reply('decr', watcher, ok, error))
 
@@ -593,7 +616,8 @@ def main():
     root = _Application()
 
     loop.run_until_complete(root.setup())
-    loop.run_until_complete(_mainloop(root))
+    loop.create_task(root.paint())
+    loop.run_until_complete(root.mainloop())
 
 if __name__ == '__main__':
     main()

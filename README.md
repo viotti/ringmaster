@@ -27,7 +27,7 @@ have much use.
 
 Latest release.
 
-    pip install ringmaster
+    pip install aiozmq ringmaster
 
 Latest commit on the master branch of the project's Git repository.
 
@@ -36,6 +36,24 @@ Latest commit on the master branch of the project's Git repository.
     curl -L https://github.com/viotti/ringmaster/tarball/master | tar -xz --strip-components 1 -
     python setup.py sdist
     pip install dist/ringmaster-*.tar.gz
+
+## Installation (OS X)
+
+1. Download and install ActiveTcl from http://www.python.org/download/mac/tcltk.
+Pay atention to the recommended version on the web page.
+
+2. Download and Install Python 3.4 from http://www.python.org/downloads.
+
+3. Install **aiozmq** and **ringmaster**.
+
+        /Library/Frameworks/Python.framework/Versions/3.4/bin/pip3 install aiozmq ringmaster
+
+The install order is important. It will make Python link with the ActiveTcl
+library, instead of linking with the library shipped with OS X.
+
+Optionally, put the Python 3 binaries in your **PATH**.
+
+    export PATH=/Library/Frameworks/Python.framework/Versions/3.4/bin:$PATH
 
 ## Basic Use
 
