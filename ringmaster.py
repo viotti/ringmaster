@@ -113,7 +113,6 @@ class _Dialog(Toplevel):
         self.focus_set()
 
     def _paint(self):
-        procs = self._parent._frame.children[self._watcher + '+l']._w_procs
         outer = ttk.Frame(self, padding=(10, 10, 10, 10))
         title = ttk.Label(outer, text='+ ' + _DOT(self._watcher))
         close = ttk.Button(outer, text='Close', command=self._close)
@@ -131,11 +130,13 @@ class _Dialog(Toplevel):
         frame.columnconfigure(0, weight=1)
 
         while self._parent._running:
+            procs = self._parent._frame.children[self._watcher + '+l']._w_procs
+
             for x in frame.grid_slaves():
                 if x._pid not in procs:
                     x.config(state='disabled')
 
-                    if x.grid_info()['row'] > 0:
+                    if int(x.grid_info()['row']) > 0:
                         x.unbind('<Button-1>')
 
             for j, pid in enumerate(procs, len(drawn)):
@@ -331,7 +332,7 @@ class _Application(Tk):
                 label._w_state = state
 
                 if sorted(label._w_procs) != sorted(procs):  # See [LEAK2].
-                    label._w_procs = procs
+                    label._w_procs = [int(x) for x in procs]
 
                     self._update_watcher_state_a(name)
 
